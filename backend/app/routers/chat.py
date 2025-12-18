@@ -4,13 +4,15 @@
 단계별 피드백을 제공하는 채팅 엔드포인트를 제공합니다.
 """
 import base64
+import time
 import uuid
 from typing import Any, Dict, List, Optional
 
+import httpx
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from openai import OpenAI
+from openai import APIConnectionError, APIError, OpenAI, RateLimitError
 
-from app.config import OPENAI_API_KEY, OPENAI_MODEL_GPT4O
+from app.config import OPENAI_API_KEY, OPENAI_MODEL_CHAT
 from app.prompts import COOKING_ASSISTANT_PROMPT
 from app.schemas.chat import (
     ChatRequest,
@@ -24,13 +26,22 @@ from app.schemas.chat import (
 # 라우터 및 클라이언트 설정
 # =============================================================================
 router = APIRouter(prefix="/api/chat", tags=["Chat"])
-client = OpenAI(api_key=OPENAI_API_KEY)
+
+# 타임아웃 설정 (채팅 응답 대기 시간 고려)
+http_client = httpx.Client(
+    timeout=httpx.Timeout(connect=30.0, read=120.0, write=30.0, pool=30.0)
+)
+client = OpenAI(api_key=OPENAI_API_KEY, http_client=http_client)
 
 # =============================================================================
 # 상수
 # =============================================================================
 MAX_HISTORY_MESSAGES = 6
 MAX_TOKENS = 500
+MAX_IMAGE_SIZE_MB = 10  # 최대 이미지 크기 (MB)
+MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024
+SESSION_EXPIRY_SECONDS = 3600  # 세션 만료 시간 (1시간)
+API_MAX_RETRIES = 2  # API 호출 재시도 횟수
 
 # =============================================================================
 # 세션 저장소 (메모리)
@@ -108,6 +119,85 @@ def _calculate_progress(completed: int, total: int) -> int:
     return int((completed / total) * 100)
 
 
+def _validate_image_size(image_bytes: bytes) -> None:
+    """이미지 크기를 검증합니다."""
+    if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"이미지 크기가 너무 큽니다. 최대 {MAX_IMAGE_SIZE_MB}MB까지 허용됩니다."
+        )
+
+
+def _cleanup_expired_sessions() -> None:
+    """만료된 세션을 정리합니다."""
+    current_time = time.time()
+    expired_sessions = [
+        sid for sid, session in cooking_sessions.items()
+        if current_time - session.get("created_at", 0) > SESSION_EXPIRY_SECONDS
+    ]
+    for sid in expired_sessions:
+        cooking_sessions.pop(sid, None)
+
+
+def _call_chat_api(
+    messages: List[Dict[str, Any]],
+    max_retries: int = API_MAX_RETRIES
+) -> str:
+    """
+    OpenAI Chat API를 호출합니다. 재시도 로직 포함.
+
+    Args:
+        messages: 메시지 리스트
+        max_retries: 최대 재시도 횟수
+
+    Returns:
+        AI 응답 텍스트
+
+    Raises:
+        HTTPException: API 호출 실패 시
+    """
+    last_error: Optional[Exception] = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            response = client.chat.completions.create(
+                model=OPENAI_MODEL_CHAT,
+                messages=messages,
+                max_tokens=MAX_TOKENS,
+                temperature=0.7
+            )
+
+            if not response.choices:
+                raise APIError("응답에 choices가 없습니다", response=None, body=None)
+
+            return response.choices[0].message.content or ""
+
+        except RateLimitError as e:
+            last_error = e
+            # Rate limit은 재시도하지 않음
+            break
+
+        except APIConnectionError as e:
+            last_error = e
+            if attempt < max_retries:
+                continue
+
+        except APIError as e:
+            last_error = e
+            if attempt < max_retries:
+                continue
+
+        except Exception as e:
+            last_error = e
+            break
+
+    error_msg = str(last_error)[:100] if last_error else "알 수 없는 오류"
+    raise HTTPException(
+        status_code=500,
+        detail=f"AI 응답 생성 실패: {error_msg}"
+    )
+
+
 # =============================================================================
 # 세션 관리 API
 # =============================================================================
@@ -120,7 +210,11 @@ async def start_cooking_session(
 
     레시피 정보를 받아서 채팅 세션을 생성합니다.
     """
-    session_id = str(uuid.uuid4())[:8]
+    # 만료된 세션 정리
+    _cleanup_expired_sessions()
+
+    # 전체 UUID 사용으로 충돌 방지
+    session_id = str(uuid.uuid4())
     recipe = request.recipe
     steps = recipe.get("steps", [])
 
@@ -131,7 +225,8 @@ async def start_cooking_session(
         "steps": steps,
         "completed_steps": [],
         "chat_history": [],
-        "ingredients": recipe.get("ingredients", [])
+        "ingredients": recipe.get("ingredients", []),
+        "created_at": time.time()  # 세션 생성 시간 기록
     }
 
     return StartSessionResponse(
@@ -216,6 +311,11 @@ async def send_message(request: ChatRequest) -> ChatResponse:
 
     이미지가 포함되면 GPT-4o Vision으로 분석합니다.
     """
+    # 이미지 크기 검증
+    if request.image_base64:
+        image_bytes = base64.b64decode(request.image_base64)
+        _validate_image_size(image_bytes)
+
     session = _get_session(request.session_id)
     steps = session["steps"]
     step_number = request.step_number
@@ -235,7 +335,7 @@ async def send_message(request: ChatRequest) -> ChatResponse:
         {"role": "system", "content": system_prompt}
     ]
 
-    # 이전 대화 히스토리 추가
+    # 이전 대화 히스토리 추가 (이미지 컨텍스트 포함)
     for msg in session["chat_history"][-MAX_HISTORY_MESSAGES:]:
         messages.append({
             "role": msg["role"],
@@ -250,54 +350,54 @@ async def send_message(request: ChatRequest) -> ChatResponse:
     )
     messages.append({"role": "user", "content": user_content})
 
-    try:
-        response = client.chat.completions.create(
-            model=OPENAI_MODEL_GPT4O,
-            messages=messages,
-            max_tokens=MAX_TOKENS,
-            temperature=0.7
-        )
+    # 재시도 로직이 포함된 API 호출
+    reply = _call_chat_api(messages)
 
-        reply = response.choices[0].message.content
-
-        # 히스토리에 저장
+    # 히스토리에 저장 (이미지 포함 시 멀티모달 콘텐츠로 저장)
+    if request.image_base64:
+        # 이미지가 있으면 멀티모달 형식으로 저장하여 컨텍스트 유지
         session["chat_history"].append({
             "role": "user",
-            "content": request.message,
+            "content": user_content,  # 멀티모달 콘텐츠 그대로 저장
             "step_number": step_number,
-            "has_image": bool(request.image_base64)
+            "has_image": True
         })
+    else:
         session["chat_history"].append({
-            "role": "assistant",
-            "content": reply,
-            "step_number": step_number
+            "role": "user",
+            "content": f"[Step {step_number} 진행 중] {request.message}",
+            "step_number": step_number,
+            "has_image": False
         })
 
-        session["current_step"] = step_number
+    session["chat_history"].append({
+        "role": "assistant",
+        "content": reply,
+        "step_number": step_number
+    })
 
-        completed = len(session["completed_steps"])
-        total = session["total_steps"]
+    session["current_step"] = step_number
 
-        return ChatResponse(
-            reply=reply,
-            step_info={
-                "step_number": step_number,
-                "instruction": step.get("instruction", ""),
-                "tips": step.get("tips", ""),
-                "is_completed": step_number in session["completed_steps"]
-            },
-            session_status={
-                "current_step": session["current_step"],
-                "completed_steps": session["completed_steps"],
-                "progress_percent": _calculate_progress(completed, total)
-            }
-        )
+    # 세션 활동 시간 갱신
+    session["created_at"] = time.time()
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"AI 응답 생성 실패: {str(e)}"
-        )
+    completed = len(session["completed_steps"])
+    total = session["total_steps"]
+
+    return ChatResponse(
+        reply=reply,
+        step_info={
+            "step_number": step_number,
+            "instruction": step.get("instruction", ""),
+            "tips": step.get("tips", ""),
+            "is_completed": step_number in session["completed_steps"]
+        },
+        session_status={
+            "current_step": session["current_step"],
+            "completed_steps": session["completed_steps"],
+            "progress_percent": _calculate_progress(completed, total)
+        }
+    )
 
 
 @router.post("/message-with-image")
@@ -316,6 +416,8 @@ async def send_message_with_image(
 
     if image:
         contents = await image.read()
+        # 이미지 크기 검증
+        _validate_image_size(contents)
         image_base64 = base64.b64encode(contents).decode("utf-8")
 
     request = ChatRequest(

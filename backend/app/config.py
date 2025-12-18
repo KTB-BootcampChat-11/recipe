@@ -32,7 +32,10 @@ CORS_ORIGINS = [
 # OpenAI API 설정
 # =============================================================================
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL_GPT4O = "gpt-4.1-mini"
+
+# 용도별 모델 설정
+OPENAI_MODEL_GPT4O = "gpt-4.1-mini"      # 레시피 파싱용 (LLM)
+OPENAI_MODEL_CHAT = "gpt-4o"              # 챗봇용 (VLM, 이미지 분석 지원)
 
 # =============================================================================
 # 작업 관리 설정
