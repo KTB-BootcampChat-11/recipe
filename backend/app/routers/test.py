@@ -325,24 +325,24 @@ async def test_transcript(request: TestURLRequest) -> Dict[str, Any]:
     source = None
 
     try:
-        # 1. YouTube 자막 시도
-        subtitle_start = time.time()
-        try:
-            subtitle_info = await download_subtitles(request.url, str(test_dir))
-            if subtitle_info:
-                transcript = parse_json3_subtitles(subtitle_info["subtitle_path"])
-                full_text = transcript.get("full_text", "") if transcript else ""
-                if transcript and len(full_text) >= MIN_TRANSCRIPT_LENGTH:
-                    source = f"youtube_{subtitle_info['language']}"
-                    if subtitle_info["is_auto_generated"]:
-                        source += "_auto"
-        except Exception:
-            pass
-        timing["subtitle_attempt"] = round(time.time() - subtitle_start, 2)
+        # # 1. YouTube 자막 시도 (주석처리 - Whisper 성능 테스트용)
+        # subtitle_start = time.time()
+        # try:
+        #     subtitle_info = await download_subtitles(request.url, str(test_dir))
+        #     if subtitle_info:
+        #         transcript = parse_json3_subtitles(subtitle_info["subtitle_path"])
+        #         full_text = transcript.get("full_text", "") if transcript else ""
+        #         if transcript and len(full_text) >= MIN_TRANSCRIPT_LENGTH:
+        #             source = f"youtube_{subtitle_info['language']}"
+        #             if subtitle_info["is_auto_generated"]:
+        #                 source += "_auto"
+        # except Exception:
+        #     pass
+        # timing["subtitle_attempt"] = round(time.time() - subtitle_start, 2)
 
-        # 2. 자막 없으면 Whisper STT 폴백
+        # 2. Whisper STT 사용 (자막 로직 비활성화)
         full_text = transcript.get("full_text", "") if transcript else ""
-        if not transcript or len(full_text) < MIN_TRANSCRIPT_LENGTH:
+        if True:  # 항상 Whisper 사용
             cached_download = _load_cached_result(video_id, "download")
             if cached_download and cached_download.get("audio_path"):
                 audio_path = cached_download["audio_path"]

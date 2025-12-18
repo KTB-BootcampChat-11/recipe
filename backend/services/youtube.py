@@ -498,6 +498,9 @@ def parse_json3_subtitles(subtitle_path: str) -> Optional[Dict]:
     cleaned_segments = _remove_duplicate_segments(segments)
     full_text = " ".join([seg["text"] for seg in cleaned_segments])
 
+    # duration 계산 (마지막 세그먼트의 end 시간)
+    duration = cleaned_segments[-1]["end"] if cleaned_segments else 0
+
     logger.info(
         f"자막 파싱 완료: {len(cleaned_segments)}개 세그먼트, {len(full_text)}자"
     )
@@ -505,6 +508,8 @@ def parse_json3_subtitles(subtitle_path: str) -> Optional[Dict]:
     return {
         "full_text": full_text,
         "segments": cleaned_segments,
+        "language": "ko",  # YouTube 자막은 언어 선택 후 다운로드하므로
+        "duration": duration,
     }
 
 

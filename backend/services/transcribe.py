@@ -1,35 +1,22 @@
 """
 음성 인식(STT) 서비스 모듈.
 
-Whisper API와 Silero VAD를 사용하여 오디오를 텍스트로 변환합니다.
+OpenAI Whisper API를 사용하여 오디오를 텍스트로 변환합니다.
+하이브리드 모드: gpt-4o-transcribe (정확도) + whisper-1 (타임스탬프) 병합
 """
-import io
+import asyncio
 import logging
 import re
-import warnings
-
-# torchaudio deprecation 경고 숨기기
-warnings.filterwarnings("ignore", message=".*torchaudio.*deprecated.*")
-warnings.filterwarnings("ignore", message=".*sox_effects.*deprecated.*")
-warnings.filterwarnings("ignore", message=".*torchcodec.*")
-
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Tuple
 
-import torch
-import torchaudio
-from openai import APIConnectionError, APIError, OpenAI, RateLimitError
+from openai import OpenAI
 
 from app.config import (
     MAX_AUDIO_FILE_SIZE,
     OPENAI_API_KEY,
-    OPENAI_MODEL_WHISPER,
     SUPPORTED_AUDIO_FORMATS,
-    VAD_MAX_SEGMENT_DURATION,
-    VAD_MIN_SILENCE_DURATION,
-    VAD_MIN_SPEECH_DURATION,
-    VAD_SAMPLE_RATE,
-    VAD_SPEECH_PAD_MS,
 )
 from app.exceptions import AudioFileError, TranscriptionError
 from app.prompts import COOKING_PROMPT
@@ -41,24 +28,10 @@ logger = logging.getLogger(__name__)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # =============================================================================
-# VAD 모델 관리 (싱글톤)
+# 상수
 # =============================================================================
-_vad_model = None
-_vad_utils = None
-
-
-def _get_vad_model():
-    """VAD 모델 싱글톤 로드 (torch hub 사용)."""
-    global _vad_model, _vad_utils
-    if _vad_model is None:
-        logger.info("Silero VAD 모델 로딩 (torch hub)...")
-        _vad_model, _vad_utils = torch.hub.load(
-            repo_or_dir="snakers4/silero-vad",
-            model="silero_vad",
-            trust_repo=True
-        )
-        logger.info("Silero VAD 모델 로딩 완료")
-    return _vad_model, _vad_utils
+MODEL_ACCURATE = "gpt-4o-transcribe"  # 정확한 텍스트용
+MODEL_TIMESTAMP = "whisper-1"          # 타임스탬프용
 
 
 # =============================================================================
@@ -72,12 +45,6 @@ SENTENCE_ENDINGS = re.compile(
     r"고요|구요|나요|까요|ㄹ까요|을까요|"
     r"니다|ㅂ니다|습니다|"
     r"거예요|건데요|세요|네요|죠|어|야)[\.\!\?]?$"
-)
-
-# 문장 구분자 패턴 (쉼표, 접속어 등)
-SENTENCE_CONNECTORS = re.compile(
-    r"(,\s*|그리고\s+|그런데\s+|그래서\s+|그러면\s+|다음에\s+|그다음에\s+|"
-    r"먼저\s+|일단\s+|그러고\s+나서\s+|이제\s+)"
 )
 
 
@@ -116,133 +83,6 @@ def _validate_audio_file(audio_path: str) -> None:
             f"지원하지 않는 오디오 형식입니다: {path.suffix} "
             f"(지원 형식: {', '.join(SUPPORTED_AUDIO_FORMATS)})"
         )
-
-
-# =============================================================================
-# VAD (Voice Activity Detection)
-# =============================================================================
-def _detect_speech_segments(audio_path: str) -> List[Dict[str, float]]:
-    """
-    VAD를 사용하여 오디오에서 발화 구간을 감지합니다.
-
-    Args:
-        audio_path: 오디오 파일 경로
-
-    Returns:
-        발화 구간 리스트 [{'start': float, 'end': float}, ...]
-    """
-    model, utils = _get_vad_model()
-    (get_speech_timestamps, _, read_audio, _, _) = utils
-
-    wav = read_audio(audio_path, sampling_rate=VAD_SAMPLE_RATE)
-
-    speech_timestamps = get_speech_timestamps(
-        wav,
-        model,
-        sampling_rate=VAD_SAMPLE_RATE,
-        min_speech_duration_ms=int(VAD_MIN_SPEECH_DURATION * 1000),
-        min_silence_duration_ms=int(VAD_MIN_SILENCE_DURATION * 1000),
-        speech_pad_ms=VAD_SPEECH_PAD_MS,
-        return_seconds=True
-    )
-
-    if not speech_timestamps:
-        logger.warning("VAD: 발화 구간을 감지하지 못했습니다")
-        return []
-
-    segments = _split_long_segments(speech_timestamps)
-    logger.info(f"VAD: {len(segments)}개 발화 구간 감지")
-    return segments
-
-
-def _split_long_segments(
-    timestamps: List[Dict[str, float]]
-) -> List[Dict[str, float]]:
-    """
-    긴 발화 구간을 최대 길이로 분할합니다.
-
-    Args:
-        timestamps: VAD 타임스탬프 리스트
-
-    Returns:
-        분할된 세그먼트 리스트
-    """
-    segments = []
-    for ts in timestamps:
-        start = ts["start"]
-        end = ts["end"]
-        duration = end - start
-
-        if duration > VAD_MAX_SEGMENT_DURATION:
-            current = start
-            while current < end:
-                seg_end = min(current + VAD_MAX_SEGMENT_DURATION, end)
-                segments.append({"start": current, "end": seg_end})
-                current = seg_end
-        else:
-            segments.append({"start": start, "end": end})
-
-    return segments
-
-
-def _extract_audio_segment(
-    audio_path: str,
-    start: float,
-    end: float
-) -> io.BytesIO:
-    """
-    오디오 파일에서 특정 구간을 추출합니다.
-
-    Args:
-        audio_path: 원본 오디오 파일 경로
-        start: 시작 시간 (초)
-        end: 끝 시간 (초)
-
-    Returns:
-        WAV 형식의 오디오 바이트 버퍼
-    """
-    waveform, sample_rate = torchaudio.load(audio_path)
-
-    start_sample = int(start * sample_rate)
-    end_sample = int(end * sample_rate)
-    segment = waveform[:, start_sample:end_sample]
-
-    buffer = io.BytesIO()
-    torchaudio.save(buffer, segment, sample_rate, format="wav")
-    buffer.seek(0)
-
-    return buffer
-
-
-# =============================================================================
-# Whisper API 호출
-# =============================================================================
-def _transcribe_segment(
-    audio_bytes: io.BytesIO,
-    language: str = "ko"
-) -> Any:
-    """
-    오디오 세그먼트를 Whisper API로 전사합니다.
-
-    Args:
-        audio_bytes: 오디오 바이트 버퍼
-        language: 언어 코드
-
-    Returns:
-        Whisper API 응답
-    """
-    audio_bytes.name = "segment.wav"
-
-    response = client.audio.transcriptions.create(
-        model=OPENAI_MODEL_WHISPER,
-        file=audio_bytes,
-        response_format="verbose_json",
-        timestamp_granularities=["word", "segment"],
-        language=language,
-        prompt=COOKING_PROMPT
-    )
-
-    return response
 
 
 # =============================================================================
@@ -306,161 +146,243 @@ def _clean_transcript_text(text: str) -> str:
 # =============================================================================
 # 문장 분리
 # =============================================================================
-def _split_into_sentences(response: Any) -> List[Dict[str, Any]]:
+def _split_into_sentences_from_segments(
+    segments: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
     """
-    Word 타임스탬프를 사용하여 문장 단위로 세그먼트를 분할합니다.
+    Whisper API 세그먼트를 문장 단위로 정리합니다.
 
     Args:
-        response: Whisper API 응답
+        segments: Whisper API 세그먼트 리스트
 
     Returns:
-        세그먼트 리스트
+        정리된 세그먼트 리스트
     """
-    words = getattr(response, "words", None)
+    if not segments:
+        return []
 
-    if not words:
-        return _extract_segments_from_response(response)
-
-    sentences = []
-    current_words = []
-    current_start = None
-
-    for i, word in enumerate(words):
-        word_text = getattr(word, "word", "").strip()
-        word_start = getattr(word, "start", 0)
-        word_end = getattr(word, "end", 0)
-
-        if not word_text:
-            continue
-
-        if current_start is None:
-            current_start = word_start
-
-        current_words.append(word_text)
-
-        is_sentence_end = _check_sentence_end(
-            word_text, word_end, words, i, len(current_words)
-        )
-
-        if is_sentence_end:
-            sentence_text = _join_words(current_words)
-            if sentence_text:
-                sentences.append({
-                    "start": round(current_start, 2),
-                    "end": round(word_end, 2),
-                    "text": sentence_text
-                })
-            current_words = []
-            current_start = None
-
-    # 남은 단어들 처리
-    if current_words:
-        sentence_text = _join_words(current_words)
-        if sentence_text and words:
-            sentences.append({
-                "start": round(current_start or 0, 2),
-                "end": round(getattr(words[-1], "end", 0), 2),
-                "text": sentence_text
+    result = []
+    for seg in segments:
+        text = seg.get("text", "").strip()
+        if text:
+            result.append({
+                "start": round(seg.get("start", 0), 2),
+                "end": round(seg.get("end", 0), 2),
+                "text": _clean_transcript_text(text)
             })
 
-    if not sentences:
-        return _extract_segments_from_response(response)
-
-    return sentences
+    return result
 
 
-def _check_sentence_end(
-    word_text: str,
-    word_end: float,
-    words: List[Any],
-    index: int,
-    word_count: int
-) -> bool:
+def _split_text_into_sentences(
+    full_text: str,
+    duration: float
+) -> List[Dict[str, Any]]:
     """
-    문장 종결 조건을 체크합니다.
+    전체 텍스트를 문장 단위로 분리합니다 (타임스탬프 없는 경우).
 
     Args:
-        word_text: 현재 단어 텍스트
-        word_end: 현재 단어 종료 시간
-        words: 전체 단어 리스트
-        index: 현재 인덱스
-        word_count: 현재까지 누적 단어 수
-
-    Returns:
-        문장 종결 여부
-    """
-    # 문장 종결 패턴 매칭
-    if SENTENCE_ENDINGS.search(word_text):
-        return True
-
-    # 긴 pause 감지 (0.8초 이상)
-    if index < len(words) - 1:
-        next_start = getattr(words[index + 1], "start", 0)
-        if next_start - word_end > 0.8:
-            return True
-
-    # 문장이 너무 길면 강제 분리 (15단어 이상)
-    if word_count >= 15:
-        return True
-
-    return False
-
-
-def _join_words(words: List[str]) -> str:
-    """
-    단어 리스트를 자연스러운 문장으로 연결합니다.
-
-    Args:
-        words: 단어 리스트
-
-    Returns:
-        연결된 문장
-    """
-    if not words:
-        return ""
-
-    text = " ".join(words)
-
-    # 조사 앞 불필요한 공백 제거
-    text = re.sub(
-        r"\s+(을|를|이|가|은|는|에|의|로|으로|와|과|도|만|까지|부터|에서)\b",
-        r"\1",
-        text
-    )
-
-    # 숫자와 단위 사이 공백 제거
-    text = re.sub(
-        r"(\d+)\s+(분|초|g|ml|개|장|큰술|작은술|스푼|컵)",
-        r"\1\2",
-        text
-    )
-
-    return text.strip()
-
-
-def _extract_segments_from_response(response: Any) -> List[Dict[str, Any]]:
-    """
-    Whisper 응답에서 세그먼트를 추출합니다.
-
-    Args:
-        response: Whisper API 응답
+        full_text: 전체 텍스트
+        duration: 오디오 길이
 
     Returns:
         세그먼트 리스트
     """
+    if not full_text:
+        return []
+
+    # 문장 종결 패턴으로 분리
+    sentences = re.split(r'(?<=[.!?요다죠])\s+', full_text)
+    sentences = [s.strip() for s in sentences if s.strip()]
+
+    if not sentences:
+        return [{"start": 0, "end": duration, "text": full_text}]
+
+    # 균등하게 타임스탬프 배분
+    time_per_sentence = duration / len(sentences) if sentences else 0
+    result = []
+
+    for i, sentence in enumerate(sentences):
+        result.append({
+            "start": round(i * time_per_sentence, 2),
+            "end": round((i + 1) * time_per_sentence, 2),
+            "text": _clean_transcript_text(sentence)
+        })
+
+    return result
+
+
+# =============================================================================
+# OpenAI Whisper API 호출
+# =============================================================================
+def _transcribe_accurate(audio_path: str, language: str = "ko") -> Dict[str, Any]:
+    """
+    gpt-4o-transcribe 모델로 정확한 텍스트를 얻습니다.
+
+    Args:
+        audio_path: 오디오 파일 경로
+        language: 언어 코드
+
+    Returns:
+        전사 결과 (text만 포함)
+    """
+    logger.info(f"gpt-4o-transcribe API 호출: {audio_path}")
+
+    with open(audio_path, "rb") as audio_file:
+        response = client.audio.transcriptions.create(
+            model=MODEL_ACCURATE,
+            file=audio_file,
+            language=language,
+            response_format="json",
+            prompt=COOKING_PROMPT
+        )
+
+    return response
+
+
+def _transcribe_with_timestamps(
+    audio_path: str,
+    language: str = "ko"
+) -> Dict[str, Any]:
+    """
+    whisper-1 모델로 타임스탬프가 포함된 세그먼트를 얻습니다.
+
+    Args:
+        audio_path: 오디오 파일 경로
+        language: 언어 코드
+
+    Returns:
+        전사 결과 (segments, duration 포함)
+    """
+    logger.info(f"whisper-1 API 호출 (타임스탬프용): {audio_path}")
+
+    with open(audio_path, "rb") as audio_file:
+        response = client.audio.transcriptions.create(
+            model=MODEL_TIMESTAMP,
+            file=audio_file,
+            language=language,
+            response_format="verbose_json",
+            prompt=COOKING_PROMPT
+        )
+
+    return response
+
+
+def _merge_transcripts(
+    accurate_text: str,
+    timestamp_response: Any
+) -> Dict[str, Any]:
+    """
+    gpt-4o-transcribe 텍스트와 whisper-1 타임스탬프를 병합합니다.
+
+    전략:
+    - full_text: gpt-4o-transcribe의 정확한 텍스트 사용
+    - segments: whisper-1의 타임스탬프 구조를 유지하되,
+                각 세그먼트 텍스트를 gpt-4o-transcribe 텍스트에서 매칭
+
+    Args:
+        accurate_text: gpt-4o-transcribe에서 얻은 정확한 텍스트
+        timestamp_response: whisper-1에서 얻은 타임스탬프 응답
+
+    Returns:
+        병합된 전사 결과
+    """
+    # whisper-1 응답에서 세그먼트와 duration 추출
     segments = []
+    if hasattr(timestamp_response, 'segments') and timestamp_response.segments:
+        segments = timestamp_response.segments
 
-    if hasattr(response, "segments") and response.segments:
-        for segment in response.segments:
-            text = getattr(segment, "text", "").strip()
-            if text:
-                segments.append({
-                    "start": getattr(segment, "start", 0),
-                    "end": getattr(segment, "end", 0),
-                    "text": text
+    duration = timestamp_response.duration if hasattr(
+        timestamp_response, 'duration'
+    ) else 0
+
+    if not segments:
+        # 세그먼트가 없으면 전체 텍스트를 하나의 세그먼트로
+        return {
+            "segments": [{"start": 0, "end": duration, "text": accurate_text}],
+            "duration": duration
+        }
+
+    # 정확한 텍스트를 문장 단위로 분리
+    accurate_sentences = re.split(r'(?<=[.!?요다죠])\s*', accurate_text)
+    accurate_sentences = [s.strip() for s in accurate_sentences if s.strip()]
+
+    # whisper-1 세그먼트 텍스트도 문장 단위로 분리하여 매핑 준비
+    whisper_sentences = []
+    for seg in segments:
+        text = seg.text if hasattr(seg, 'text') else seg.get('text', '')
+        whisper_sentences.append({
+            "start": seg.start if hasattr(seg, 'start') else seg.get('start', 0),
+            "end": seg.end if hasattr(seg, 'end') else seg.get('end', 0),
+            "text": text.strip()
+        })
+
+    # 병합 전략: whisper-1의 타임스탬프 구조 유지, 텍스트는 비율에 맞게 배분
+    merged_segments = []
+
+    if len(accurate_sentences) == len(whisper_sentences):
+        # 문장 수가 같으면 1:1 매핑
+        for i, ws in enumerate(whisper_sentences):
+            merged_segments.append({
+                "start": round(ws["start"], 2),
+                "end": round(ws["end"], 2),
+                "text": accurate_sentences[i]
+            })
+    else:
+        # 문장 수가 다르면 whisper-1 타임스탬프에 gpt-4o 텍스트를 비율 배분
+        total_whisper_len = sum(len(ws["text"]) for ws in whisper_sentences)
+
+        if total_whisper_len == 0:
+            # whisper 텍스트가 비어있으면 균등 배분
+            time_per_sentence = duration / len(accurate_sentences)
+            for i, sent in enumerate(accurate_sentences):
+                merged_segments.append({
+                    "start": round(i * time_per_sentence, 2),
+                    "end": round((i + 1) * time_per_sentence, 2),
+                    "text": sent
                 })
+        else:
+            # whisper 세그먼트 길이 비율에 따라 accurate 텍스트 배분
+            accurate_full = " ".join(accurate_sentences)
+            accurate_idx = 0
 
-    return segments
+            for ws in whisper_sentences:
+                # 이 세그먼트에 할당할 문자 수 계산
+                ratio = len(ws["text"]) / total_whisper_len
+                chars_to_assign = int(len(accurate_full) * ratio)
+
+                # 문장 경계에서 끊기
+                end_idx = min(accurate_idx + chars_to_assign, len(accurate_full))
+
+                # 마지막이 아니면 문장 종결 위치 찾기
+                if end_idx < len(accurate_full):
+                    # 가장 가까운 문장 종결 찾기
+                    for delim in ['. ', '! ', '? ', '요 ', '다 ', '죠 ']:
+                        pos = accurate_full.find(delim, end_idx - 20, end_idx + 20)
+                        if pos != -1:
+                            end_idx = pos + len(delim)
+                            break
+
+                segment_text = accurate_full[accurate_idx:end_idx].strip()
+                accurate_idx = end_idx
+
+                if segment_text:
+                    merged_segments.append({
+                        "start": round(ws["start"], 2),
+                        "end": round(ws["end"], 2),
+                        "text": segment_text
+                    })
+
+            # 남은 텍스트가 있으면 마지막 세그먼트에 추가
+            if accurate_idx < len(accurate_full) and merged_segments:
+                remaining = accurate_full[accurate_idx:].strip()
+                if remaining:
+                    merged_segments[-1]["text"] += " " + remaining
+
+    return {
+        "segments": merged_segments,
+        "duration": duration
+    }
 
 
 # =============================================================================
@@ -469,20 +391,24 @@ def _extract_segments_from_response(response: Any) -> List[Dict[str, Any]]:
 async def transcribe_audio(
     audio_path: str,
     language: str = "ko",
-    use_vad: bool = True
+    use_vad: bool = False  # API 모드에서는 VAD 미사용
 ) -> Dict[str, Any]:
     """
-    VAD + Whisper API를 사용하여 오디오를 텍스트로 변환합니다.
+    하이브리드 방식으로 오디오를 텍스트로 변환합니다.
+
+    두 모델을 병렬로 호출하여 결과를 병합:
+    - gpt-4o-transcribe: 정확한 텍스트
+    - whisper-1: 타임스탬프/세그먼트
 
     Args:
         audio_path: 오디오 파일 경로
         language: 언어 코드 (기본: ko)
-        use_vad: VAD 사용 여부 (기본: True)
+        use_vad: VAD 사용 여부 (API 모드에서는 무시됨)
 
     Returns:
         전사 결과 딕셔너리:
-        - full_text: 전체 텍스트
-        - segments: 세그먼트 리스트
+        - full_text: 전체 텍스트 (gpt-4o-transcribe)
+        - segments: 세그먼트 리스트 (타임스탬프는 whisper-1, 텍스트는 병합)
         - language: 언어 코드
         - duration: 오디오 길이
 
@@ -492,127 +418,69 @@ async def transcribe_audio(
     """
     _validate_audio_file(audio_path)
 
-    logger.info(f"음성 인식 시작: {audio_path} (VAD: {use_vad})")
+    logger.info(f"하이브리드 음성 인식 시작: {audio_path}")
 
     try:
-        if use_vad:
-            return await _transcribe_with_vad(audio_path, language)
-        else:
-            return await _transcribe_full_audio(audio_path, language)
+        # 두 API를 병렬로 호출
+        loop = asyncio.get_event_loop()
 
-    except (RateLimitError, APIConnectionError, APIError) as e:
-        logger.error(f"API 오류: {e}")
-        raise TranscriptionError(f"음성 인식 API 오류: {e}")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            # gpt-4o-transcribe (정확한 텍스트)
+            accurate_future = loop.run_in_executor(
+                executor,
+                _transcribe_accurate,
+                audio_path,
+                language
+            )
+            # whisper-1 (타임스탬프)
+            timestamp_future = loop.run_in_executor(
+                executor,
+                _transcribe_with_timestamps,
+                audio_path,
+                language
+            )
+
+            # 두 결과 대기
+            accurate_response, timestamp_response = await asyncio.gather(
+                accurate_future,
+                timestamp_future
+            )
+
+        # 정확한 텍스트 추출
+        accurate_text = accurate_response.text if hasattr(
+            accurate_response, 'text'
+        ) else ""
+
+        # 텍스트 정제
+        cleaned_text = _clean_transcript_text(accurate_text)
+
+        # 두 결과 병합
+        merged = _merge_transcripts(cleaned_text, timestamp_response)
+
+        # 세그먼트 텍스트도 정제
+        cleaned_segments = []
+        for seg in merged["segments"]:
+            cleaned_segments.append({
+                "start": seg["start"],
+                "end": seg["end"],
+                "text": _clean_transcript_text(seg["text"])
+            })
+
+        logger.info(
+            f"하이브리드 음성 인식 완료: {len(cleaned_text)}자, "
+            f"{len(cleaned_segments)}개 세그먼트"
+        )
+
+        return {
+            "full_text": cleaned_text,
+            "segments": cleaned_segments,
+            "language": language,
+            "duration": merged["duration"]
+        }
 
     except AudioFileError:
         raise
 
     except Exception as e:
-        logger.error(f"음성 인식 중 예상치 못한 오류: {e}")
+        logger.error(f"음성 인식 중 오류: {e}")
         raise TranscriptionError(f"음성 인식 중 오류가 발생했습니다: {e}")
-
-
-async def _transcribe_with_vad(
-    audio_path: str,
-    language: str
-) -> Dict[str, Any]:
-    """VAD를 사용하여 발화 구간별로 전사합니다."""
-    speech_segments = _detect_speech_segments(audio_path)
-
-    if not speech_segments:
-        logger.warning("VAD: 발화 구간이 없습니다. 전체 오디오로 폴백합니다.")
-        return await _transcribe_full_audio(audio_path, language)
-
-    all_segments = []
-    all_texts = []
-    total_duration = 0
-
-    for i, seg in enumerate(speech_segments):
-        logger.info(
-            f"VAD 구간 {i + 1}/{len(speech_segments)}: "
-            f"{seg['start']:.1f}s - {seg['end']:.1f}s"
-        )
-
-        audio_buffer = _extract_audio_segment(
-            audio_path, seg["start"], seg["end"]
-        )
-        response = _transcribe_segment(audio_buffer, language)
-
-        segment_text = getattr(response, "text", "") or ""
-
-        if segment_text.strip():
-            cleaned_text = _clean_transcript_text(segment_text)
-            all_texts.append(cleaned_text)
-
-            sub_segments = _split_into_sentences(response)
-
-            # 원본 오디오 기준으로 타임스탬프 오프셋 적용
-            for sub_seg in sub_segments:
-                sub_seg["start"] = round(seg["start"] + sub_seg["start"], 2)
-                sub_seg["end"] = round(seg["start"] + sub_seg["end"], 2)
-                sub_seg["text"] = _clean_transcript_text(sub_seg["text"])
-
-            all_segments.extend(sub_segments)
-
-        total_duration = max(total_duration, seg["end"])
-
-    full_text = " ".join(all_texts)
-
-    logger.info(
-        f"음성 인식 완료 (VAD): {len(full_text)}자, "
-        f"{len(all_segments)}개 세그먼트"
-    )
-
-    return {
-        "full_text": full_text,
-        "segments": all_segments,
-        "language": language,
-        "duration": total_duration
-    }
-
-
-async def _transcribe_full_audio(
-    audio_path: str,
-    language: str
-) -> Dict[str, Any]:
-    """전체 오디오를 한 번에 전사합니다 (VAD 미사용 폴백)."""
-    with open(audio_path, "rb") as audio_file:
-        response = client.audio.transcriptions.create(
-            model=OPENAI_MODEL_WHISPER,
-            file=audio_file,
-            response_format="verbose_json",
-            timestamp_granularities=["word", "segment"],
-            language=language,
-            prompt=COOKING_PROMPT
-        )
-
-    if not response:
-        raise TranscriptionError("음성 인식 응답이 비어있습니다")
-
-    full_text = getattr(response, "text", "") or ""
-
-    if not full_text.strip():
-        logger.warning("음성 인식 결과가 비어있습니다 (무음 또는 인식 실패)")
-        return {
-            "full_text": "",
-            "segments": [],
-            "language": language,
-            "duration": getattr(response, "duration", 0)
-        }
-
-    cleaned_text = _clean_transcript_text(full_text)
-    segments = _split_into_sentences(response)
-
-    for seg in segments:
-        seg["text"] = _clean_transcript_text(seg["text"])
-
-    logger.info(
-        f"음성 인식 완료: {len(cleaned_text)}자, {len(segments)}개 세그먼트"
-    )
-
-    return {
-        "full_text": cleaned_text,
-        "segments": segments,
-        "language": getattr(response, "language", language),
-        "duration": getattr(response, "duration", 0)
-    }

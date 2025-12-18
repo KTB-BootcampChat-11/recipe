@@ -222,30 +222,30 @@ async def _step_extract_transcript(
     transcript = None
     transcript_source = None
 
-    # YouTube 자막 시도
-    job_manager.update_job(
-        job_id,
-        step="subtitle",
-        message="YouTube 자막 확인 중...",
-        progress=28
-    )
+    # # YouTube 자막 시도 (주석처리 - Whisper 성능 테스트용)
+    # job_manager.update_job(
+    #     job_id,
+    #     step="subtitle",
+    #     message="YouTube 자막 확인 중...",
+    #     progress=28
+    # )
+    #
+    # try:
+    #     subtitle_info = await download_subtitles(url, str(job_dir))
+    #     if subtitle_info:
+    #         transcript = parse_json3_subtitles(subtitle_info["subtitle_path"])
+    #         if transcript and transcript.get("full_text"):
+    #             transcript_source = f"youtube_{subtitle_info['language']}"
+    #             if subtitle_info["is_auto_generated"]:
+    #                 transcript_source += "_auto"
+    #             logger.info(
+    #                 f"[{job_id[:8]}] YouTube 자막 사용: {transcript_source}"
+    #             )
+    # except (SubtitleError, Exception) as e:
+    #     logger.warning(f"[{job_id[:8]}] YouTube 자막 처리 실패: {e}")
 
-    try:
-        subtitle_info = await download_subtitles(url, str(job_dir))
-        if subtitle_info:
-            transcript = parse_json3_subtitles(subtitle_info["subtitle_path"])
-            if transcript and transcript.get("full_text"):
-                transcript_source = f"youtube_{subtitle_info['language']}"
-                if subtitle_info["is_auto_generated"]:
-                    transcript_source += "_auto"
-                logger.info(
-                    f"[{job_id[:8]}] YouTube 자막 사용: {transcript_source}"
-                )
-    except (SubtitleError, Exception) as e:
-        logger.warning(f"[{job_id[:8]}] YouTube 자막 처리 실패: {e}")
-
-    # 자막이 없거나 품질이 낮으면 Whisper STT 폴백
-    if not _is_valid_transcript(transcript):
+    # Whisper STT 사용 (자막 로직 비활성화)
+    if True:  # 항상 Whisper 사용
         job_manager.update_job(
             job_id,
             step="stt",
@@ -259,12 +259,12 @@ async def _step_extract_transcript(
             logger.info(f"[{job_id[:8]}] Whisper STT 사용")
         except TranscriptionError as e:
             raise Exception(f"음성 인식 실패: {e}")
-    else:
-        job_manager.update_job(
-            job_id,
-            message="YouTube 자막 사용!",
-            progress=45
-        )
+    # else:  # 주석처리 - Whisper 성능 테스트용
+    #     job_manager.update_job(
+    #         job_id,
+    #         message="YouTube 자막 사용!",
+    #         progress=45
+    #     )
 
     # 텍스트 유효성 최종 확인
     if not _is_valid_transcript(transcript):
