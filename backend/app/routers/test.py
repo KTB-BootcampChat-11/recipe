@@ -19,9 +19,9 @@ from app.schemas.test import (
     TestURLRequest,
 )
 from app.utils.logger import save_log
-from services.recipe_parser import parse_recipe
-from services.transcribe import transcribe_audio
-from services.youtube import (
+from app.services.recipe_parser import parse_recipe
+from app.services.transcribe import transcribe_audio
+from app.services.youtube import (
     download_subtitles,
     download_video,
     extract_video_id,
@@ -341,7 +341,6 @@ async def test_transcript(request: TestURLRequest) -> Dict[str, Any]:
         # timing["subtitle_attempt"] = round(time.time() - subtitle_start, 2)
 
         # 2. Whisper STT 사용 (자막 로직 비활성화)
-        full_text = transcript.get("full_text", "") if transcript else ""
         if True:  # 항상 Whisper 사용
             cached_download = _load_cached_result(video_id, "download")
             if cached_download and cached_download.get("audio_path"):

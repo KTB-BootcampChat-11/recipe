@@ -83,9 +83,9 @@ def _handle_download_error(error: Exception, context: str) -> None:
     error_msg = str(error).lower()
 
     if "private" in error_msg or "unavailable" in error_msg:
-        raise VideoUnavailableError(f"영상이 비공개이거나 삭제되었습니다.")
+        raise VideoUnavailableError("영상이 비공개이거나 삭제되었습니다.")
     elif "not found" in error_msg or "404" in error_msg:
-        raise VideoNotFoundError(f"영상을 찾을 수 없습니다.")
+        raise VideoNotFoundError("영상을 찾을 수 없습니다.")
     else:
         raise YouTubeDownloadError(f"{context}: {error}")
 

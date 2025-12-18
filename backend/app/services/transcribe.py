@@ -9,7 +9,7 @@ import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 import httpx
 from openai import OpenAI
@@ -231,7 +231,7 @@ def _transcribe_accurate(audio_path: str, language: str = "ko") -> Dict[str, Any
     Returns:
         전사 결과 (text만 포함)
     """
-    print(f"[STT] gpt-4o-transcribe API 호출 중...")
+    print("[STT] gpt-4o-transcribe API 호출 중...")
     logger.info(f"[STT] gpt-4o-transcribe API 호출: {audio_path}")
 
     with open(audio_path, "rb") as audio_file:
@@ -260,7 +260,7 @@ def _transcribe_with_timestamps(
     Returns:
         전사 결과 (segments, duration 포함)
     """
-    print(f"[STT] whisper-1 API 호출 중 (타임스탬프)...")
+    print("[STT] whisper-1 API 호출 중 (타임스탬프)...")
     logger.info(f"[STT] whisper-1 API 호출 (타임스탬프용): {audio_path}")
 
     with open(audio_path, "rb") as audio_file:
@@ -425,7 +425,7 @@ async def transcribe_audio(
     """
     _validate_audio_file(audio_path)
 
-    print(f"[STT] 하이브리드 음성 인식 시작...")
+    print("[STT] 하이브리드 음성 인식 시작...")
     logger.info(f"[STT] 하이브리드 음성 인식 시작: {audio_path}")
 
     try:

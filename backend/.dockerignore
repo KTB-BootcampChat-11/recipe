@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv
+ENV
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# 환경 설정
+.env
+.env.local
+
+# 테스트
+.pytest_cache
+.coverage
+htmlcov
+
+# 빌드
+dist
+build
+*.egg-info
+
+# 로그 및 데이터 (컨테이너 내에서 생성)
+data/
+logs/
+*.log

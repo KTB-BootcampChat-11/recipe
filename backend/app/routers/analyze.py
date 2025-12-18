@@ -18,7 +18,6 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from app.config import DATA_DIR, JOB_EXPIRE_HOURS, MAX_JOBS
 from app.exceptions import (
     RecipeParseError,
-    SubtitleError,
     TranscriptionError,
     YouTubeDownloadError,
 )
@@ -27,14 +26,9 @@ from app.schemas.analyze import (
     AnalyzeResponse,
     JobStatusResponse,
 )
-from services.recipe_parser import parse_recipe
-from services.transcribe import transcribe_audio
-from services.youtube import (
-    download_subtitles,
-    download_video,
-    extract_video_id,
-    parse_json3_subtitles,
-)
+from app.services.recipe_parser import parse_recipe
+from app.services.transcribe import transcribe_audio
+from app.services.youtube import download_video, extract_video_id
 
 # =============================================================================
 # 로깅 및 라우터 설정
