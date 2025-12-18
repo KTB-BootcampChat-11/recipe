@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+import httpx
 from openai import OpenAI
 
 from app.config import (
@@ -25,7 +26,11 @@ from app.prompts import COOKING_PROMPT
 # 로깅 및 클라이언트 설정
 # =============================================================================
 logger = logging.getLogger(__name__)
-client = OpenAI(api_key=OPENAI_API_KEY)
+
+# 타임아웃 설정 (오디오 파일 업로드 + 처리 시간 고려)
+# connect: 연결 타임아웃, read: 응답 대기 타임아웃
+http_client = httpx.Client(timeout=httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0))
+client = OpenAI(api_key=OPENAI_API_KEY, http_client=http_client)
 
 # =============================================================================
 # 상수
@@ -226,7 +231,8 @@ def _transcribe_accurate(audio_path: str, language: str = "ko") -> Dict[str, Any
     Returns:
         전사 결과 (text만 포함)
     """
-    logger.info(f"gpt-4o-transcribe API 호출: {audio_path}")
+    print(f"[STT] gpt-4o-transcribe API 호출 중...")
+    logger.info(f"[STT] gpt-4o-transcribe API 호출: {audio_path}")
 
     with open(audio_path, "rb") as audio_file:
         response = client.audio.transcriptions.create(
@@ -254,7 +260,8 @@ def _transcribe_with_timestamps(
     Returns:
         전사 결과 (segments, duration 포함)
     """
-    logger.info(f"whisper-1 API 호출 (타임스탬프용): {audio_path}")
+    print(f"[STT] whisper-1 API 호출 중 (타임스탬프)...")
+    logger.info(f"[STT] whisper-1 API 호출 (타임스탬프용): {audio_path}")
 
     with open(audio_path, "rb") as audio_file:
         response = client.audio.transcriptions.create(
@@ -418,7 +425,8 @@ async def transcribe_audio(
     """
     _validate_audio_file(audio_path)
 
-    logger.info(f"하이브리드 음성 인식 시작: {audio_path}")
+    print(f"[STT] 하이브리드 음성 인식 시작...")
+    logger.info(f"[STT] 하이브리드 음성 인식 시작: {audio_path}")
 
     try:
         # 두 API를 병렬로 호출
@@ -466,8 +474,9 @@ async def transcribe_audio(
                 "text": _clean_transcript_text(seg["text"])
             })
 
+        print(f"[STT] 하이브리드 음성 인식 완료: {len(cleaned_text)}자, {len(cleaned_segments)}개 세그먼트")
         logger.info(
-            f"하이브리드 음성 인식 완료: {len(cleaned_text)}자, "
+            f"[STT] 하이브리드 음성 인식 완료: {len(cleaned_text)}자, "
             f"{len(cleaned_segments)}개 세그먼트"
         )
 
@@ -482,5 +491,5 @@ async def transcribe_audio(
         raise
 
     except Exception as e:
-        logger.error(f"음성 인식 중 오류: {e}")
+        logger.error(f"[STT] 음성 인식 중 오류: {e}")
         raise TranscriptionError(f"음성 인식 중 오류가 발생했습니다: {e}")

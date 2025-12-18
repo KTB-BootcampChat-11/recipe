@@ -8,6 +8,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
+import httpx
 from openai import APIConnectionError, APIError, OpenAI, RateLimitError
 
 from app.config import (
@@ -22,13 +23,18 @@ from app.prompts import RECIPE_PARSE_PROMPT
 # 로깅 및 클라이언트 설정
 # =============================================================================
 logger = logging.getLogger(__name__)
-client = OpenAI(api_key=OPENAI_API_KEY)
+
+# 타임아웃 설정 (LLM 응답 대기 시간 고려)
+http_client = httpx.Client(
+    timeout=httpx.Timeout(connect=30.0, read=180.0, write=30.0, pool=30.0)
+)
+client = OpenAI(api_key=OPENAI_API_KEY, http_client=http_client)
 
 # =============================================================================
 # 상수
 # =============================================================================
 MAX_TRANSCRIPT_LENGTH = 4000  # 토큰 제한 (한글 1자 ≈ 2토큰)
-API_TIMEOUT = 60  # 초
+API_TIMEOUT = 180  # 초 (LLM 응답 대기)
 
 
 # =============================================================================
@@ -100,9 +106,14 @@ def _validate_steps(steps: List[Any]) -> List[Dict[str, Any]]:
         if not isinstance(step, dict):
             continue
 
+        # instruction에서 문자열 '\n'을 실제 줄바꿈으로 변환
+        instruction = step.get("instruction", "")
+        if isinstance(instruction, str):
+            instruction = instruction.replace("\\n", "\n")
+
         validated_step = {
             "step_number": step.get("step_number", i + 1),
-            "instruction": step.get("instruction", ""),
+            "instruction": instruction,
             "timestamp": max(0, float(step.get("timestamp", 0))),
             "duration": step.get("duration", ""),
             "details": step.get("details", ""),
@@ -288,47 +299,50 @@ async def parse_recipe(
 
     for attempt in range(max_retries + 1):
         try:
+            print(f"[LLM] 레시피 파싱 시도 {attempt + 1}/{max_retries + 1}, 모델: {OPENAI_MODEL_GPT4O}")
             logger.info(
-                f"레시피 파싱 시도 {attempt + 1}/{max_retries + 1}, "
+                f"[LLM] 레시피 파싱 시도 {attempt + 1}/{max_retries + 1}, "
                 f"모델: {OPENAI_MODEL_GPT4O}"
             )
 
             recipe_data = _call_gpt_api(user_message)
             recipe_data = _validate_recipe_data(recipe_data)
 
+            print(f"[LLM] 레시피 파싱 성공: {recipe_data.get('title', 'unknown')}")
             logger.info(
-                f"레시피 파싱 성공: {recipe_data.get('title', 'unknown')}"
+                f"[LLM] 레시피 파싱 성공: {recipe_data.get('title', 'unknown')}"
             )
             return recipe_data
 
         except json.JSONDecodeError as e:
             last_error = e
-            logger.warning(f"JSON 파싱 실패 (시도 {attempt + 1}): {e}")
+            logger.warning(f"[LLM] JSON 파싱 실패 (시도 {attempt + 1}): {e}")
 
         except RateLimitError as e:
             last_error = e
-            logger.error(f"API 할당량 초과: {e}")
+            logger.error(f"[LLM] API 할당량 초과: {e}")
             break
 
         except APIConnectionError as e:
             last_error = e
-            logger.warning(f"API 연결 오류 (시도 {attempt + 1}): {e}")
+            print(f"[LLM] API 연결 오류 (시도 {attempt + 1}): {e}")
+            logger.warning(f"[LLM] API 연결 오류 (시도 {attempt + 1}): {e}")
 
         except APIError as e:
             last_error = e
-            logger.error(f"OpenAI API 오류: {e}")
+            logger.error(f"[LLM] OpenAI API 오류: {e}")
             break
 
         except RecipeParseError as e:
             last_error = e
-            logger.warning(f"레시피 파싱 오류 (시도 {attempt + 1}): {e}")
+            logger.warning(f"[LLM] 레시피 파싱 오류 (시도 {attempt + 1}): {e}")
 
         except Exception as e:
             last_error = e
-            logger.error(f"예상치 못한 오류 (시도 {attempt + 1}): {e}")
+            logger.error(f"[LLM] 예상치 못한 오류 (시도 {attempt + 1}): {e}")
 
     # 모든 재시도 실패 시 기본 구조 반환
-    logger.error(f"레시피 파싱 최종 실패: {last_error}")
+    logger.error(f"[LLM] 레시피 파싱 최종 실패: {last_error}")
 
     error_description = str(last_error)[:100] if last_error else "알 수 없는 오류"
 

@@ -32,7 +32,7 @@ CORS_ORIGINS = [
 # OpenAI API 설정
 # =============================================================================
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL_GPT4O = "gpt-4o"
+OPENAI_MODEL_GPT4O = "gpt-4.1-mini"
 
 # =============================================================================
 # 작업 관리 설정
