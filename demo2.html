@@ -1,0 +1,1145 @@
+<!doctype html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>오늘 뭐먹지 — demo1</title>
+
+    <!-- Modern font: Inter + Pretendard -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg: #ffffff;
+            --card: #ffffff;
+            --ink: #172233;
+            --muted: #5f6d7c;
+            --line: rgba(23, 34, 51, .10);
+
+            --g-50: #F1FBF5;
+            --g-200: #BFECCD;
+
+            --o-50: #FFF6EC;
+            --o-200: #FFD1A1;
+
+            --shadow: 0 14px 36px rgba(17, 24, 39, .10);
+            --shadow2: 0 10px 22px rgba(17, 24, 39, .08);
+            --radius: 18px;
+
+            --stickyTop: 72px;
+            /* same as topbar height */
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Inter, Pretendard, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, "Apple SD Gothic Neo", sans-serif;
+            color: var(--ink);
+            background:
+                radial-gradient(900px 520px at 14% 8%, rgba(69, 197, 138, .22), transparent 60%),
+                radial-gradient(900px 520px at 86% 14%, rgba(255, 155, 74, .20), transparent 55%),
+                linear-gradient(180deg, #ffffff, #FBFCFF 75%);
+            overflow-x: hidden;
+        }
+
+        /* Topbar */
+        .topbar {
+            height: 72px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 22px;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, .78);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            user-select: none;
+        }
+
+        .logo {
+            width: 40px;
+            height: 40px;
+            border-radius: 14px;
+            background:
+                radial-gradient(14px 14px at 30% 30%, rgba(255, 255, 255, .95), transparent 62%),
+                linear-gradient(135deg, rgba(69, 197, 138, 1), rgba(255, 155, 74, 1));
+            box-shadow: 0 12px 22px rgba(17, 24, 39, .10);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .logo::after {
+            content: "";
+            position: absolute;
+            inset: -40%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .75), transparent);
+            transform: rotate(22deg);
+            animation: shine 3.0s ease-in-out infinite;
+        }
+
+        @keyframes shine {
+
+            0%,
+            62% {
+                transform: translateX(-40%) rotate(22deg);
+                opacity: 0;
+            }
+
+            72% {
+                opacity: .95;
+            }
+
+            100% {
+                transform: translateX(40%) rotate(22deg);
+                opacity: 0;
+            }
+        }
+
+        .brand h1 {
+            font-size: 16px;
+            margin: 0;
+            letter-spacing: -.3px;
+            display: flex;
+            gap: 8px;
+            align-items: baseline;
+            font-weight: 900;
+        }
+
+        .badge {
+            font-size: 12px;
+            padding: 3px 9px;
+            border-radius: 999px;
+            border: 1px solid rgba(23, 34, 51, .10);
+            background: rgba(255, 255, 255, .85);
+            color: rgba(23, 34, 51, .70);
+            font-weight: 800;
+        }
+
+        .actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .pill {
+            padding: 10px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(23, 34, 51, .10);
+            background: rgba(255, 255, 255, .90);
+            color: rgba(23, 34, 51, .86);
+            font-size: 13px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            cursor: pointer;
+            transition: .15s transform, .15s box-shadow, .15s background;
+            box-shadow: var(--shadow2);
+            font-weight: 900;
+        }
+
+        .pill:hover {
+            transform: translateY(-1px);
+            background: rgba(255, 255, 255, .98);
+            box-shadow: var(--shadow);
+        }
+
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 14px;
+            border: 1px solid rgba(23, 34, 51, .10);
+            background:
+                radial-gradient(14px 14px at 30% 30%, rgba(255, 255, 255, .95), transparent 62%),
+                linear-gradient(135deg, rgba(255, 155, 74, .55), rgba(69, 197, 138, .55));
+            display: grid;
+            place-items: center;
+            font-weight: 900;
+        }
+
+        .container {
+            width: min(1140px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 36px 0 96px;
+        }
+
+        .hero {
+            margin-top: 44px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 14px;
+        }
+
+        .headline {
+            font-size: 46px;
+            line-height: 1.05;
+            margin: 0;
+            letter-spacing: -1px;
+            font-weight: 900;
+        }
+
+        .headline .accent {
+            background: linear-gradient(90deg, rgba(69, 197, 138, 1), rgba(255, 155, 74, 1));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .sub {
+            margin: 0;
+            font-size: 15px;
+            color: var(--muted);
+            max-width: 820px;
+            line-height: 1.65;
+            font-weight: 650;
+        }
+
+        /* Center input */
+        .searchWrap {
+            margin-top: 24px;
+            width: min(900px, 100%);
+        }
+
+        .searchBar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 14px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, .96);
+            border: 1px solid rgba(23, 34, 51, .10);
+            box-shadow: var(--shadow);
+            transition: .18s border, .18s transform, .18s box-shadow;
+        }
+
+        .searchBar:focus-within {
+            border-color: rgba(69, 197, 138, .45);
+            transform: translateY(-1px);
+            box-shadow: 0 18px 42px rgba(17, 24, 39, .12);
+        }
+
+        .icon {
+            width: 22px;
+            height: 22px;
+        }
+
+        .input {
+            flex: 1;
+            border: none;
+            outline: none;
+            background: transparent;
+            color: var(--ink);
+            font-size: 15px;
+            padding: 4px 4px;
+            font-weight: 650;
+        }
+
+        .input::placeholder {
+            color: rgba(95, 109, 124, .95);
+        }
+
+        .btn {
+            border: none;
+            cursor: pointer;
+            padding: 10px 14px;
+            border-radius: 999px;
+            font-size: 13px;
+            color: rgba(23, 34, 51, .92);
+            background: linear-gradient(135deg, var(--g-200), var(--o-200));
+            border: 1px solid rgba(23, 34, 51, .08);
+            transition: .15s transform, .15s filter;
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.02);
+        }
+
+        .btn:active {
+            transform: translateY(0px);
+        }
+
+        .hintRow {
+            margin-top: 12px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            color: rgba(95, 109, 124, .95);
+            font-size: 12.5px;
+            font-weight: 650;
+        }
+
+        .chip {
+            padding: 8px 11px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, .92);
+            border: 1px solid rgba(23, 34, 51, .10);
+            cursor: pointer;
+            transition: .15s transform, .15s box-shadow, .15s background;
+            user-select: none;
+            box-shadow: var(--shadow2);
+            font-weight: 800;
+        }
+
+        .chip:hover {
+            transform: translateY(-1px);
+            background: rgba(255, 255, 255, .98);
+            box-shadow: var(--shadow);
+        }
+
+        /* Results: vertical stack */
+        .result {
+            margin-top: 38px;
+            display: none;
+            gap: 18px;
+        }
+
+        .result.show {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Section header (same vibe as cardHeader) */
+        .sectionHeader {
+            position: sticky;
+            top: calc(var(--stickyTop) + 10px);
+            z-index: 40;
+            padding: 14px 16px;
+            border-radius: 16px;
+            border: 1px solid rgba(23, 34, 51, .10);
+            background: linear-gradient(135deg, var(--g-50), var(--o-50));
+            box-shadow: var(--shadow2);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            backdrop-filter: blur(8px);
+        }
+
+        .sectionHeaderLeft {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .sectionKicker {
+            font-size: 12px;
+            color: rgba(23, 34, 51, .70);
+            font-weight: 900;
+            letter-spacing: .1px;
+        }
+
+        .sectionTitleRow {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            min-width: 0;
+        }
+
+        .sectionTitleText {
+            font-size: 20px;
+            font-weight: 900;
+            letter-spacing: -.5px;
+            margin: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: min(720px, 72vw);
+        }
+
+        .metaPill {
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(23, 34, 51, .10);
+            background: rgba(255, 255, 255, .92);
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .sectionHeaderRight {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .saveBtn {
+            border: 1px solid rgba(23, 34, 51, .10);
+            background: rgba(255, 255, 255, .92);
+            box-shadow: var(--shadow2);
+            cursor: pointer;
+            padding: 10px 12px;
+            border-radius: 999px;
+            font-weight: 900;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: .15s transform, .15s background, .15s box-shadow;
+            color: rgba(23, 34, 51, .90);
+            user-select: none;
+        }
+
+        .saveBtn:hover {
+            transform: translateY(-1px);
+            background: rgba(255, 255, 255, .98);
+            box-shadow: var(--shadow);
+        }
+
+        .saveBtn.saved {
+            background: linear-gradient(135deg, var(--g-200), var(--o-200));
+            border-color: rgba(23, 34, 51, .08);
+        }
+
+        .saveIcon {
+            width: 18px;
+            height: 18px;
+            display: inline-block;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--card);
+            border: 1px solid rgba(23, 34, 51, .10);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .cardHeader {
+            padding: 16px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(23, 34, 51, .08);
+            background: linear-gradient(135deg, var(--g-50), var(--o-50));
+        }
+
+        .cardHeader h3 {
+            margin: 0;
+            font-size: 14px;
+            letter-spacing: .1px;
+            color: rgba(23, 34, 51, .92);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 900;
+        }
+
+        .tag {
+            font-size: 12px;
+            color: rgba(23, 34, 51, .72);
+            border: 1px solid rgba(23, 34, 51, .10);
+            padding: 5px 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, .88);
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .cardBody {
+            padding: 18px;
+        }
+
+        .grid2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+
+        @media (max-width: 720px) {
+            .grid2 {
+                grid-template-columns: 1fr;
+            }
+
+            .sectionTitleText {
+                max-width: 90vw;
+            }
+
+            .sectionHeader {
+                top: calc(var(--stickyTop) + 8px);
+            }
+        }
+
+        .sectionTitleSmall {
+            margin: 0 0 10px 0;
+            font-size: 14.5px;
+            font-weight: 900;
+            letter-spacing: -.1px;
+        }
+
+        .list {
+            margin: 0;
+            padding-left: 18px;
+            font-weight: 650;
+        }
+
+        .list li {
+            margin: 8px 0;
+        }
+
+        .steps {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .step {
+            padding: 12px 12px;
+            border-radius: 14px;
+            border: 1px solid rgba(23, 34, 51, .10);
+            background: rgba(255, 255, 255, .96);
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+        }
+
+        .num {
+            min-width: 28px;
+            height: 28px;
+            border-radius: 10px;
+            display: grid;
+            place-items: center;
+            font-size: 12px;
+            font-weight: 900;
+            color: rgba(23, 34, 51, .92);
+            background: linear-gradient(135deg, var(--g-200), var(--o-200));
+            border: 1px solid rgba(23, 34, 51, .08);
+        }
+
+        .step p {
+            margin: 0;
+            font-size: 13.5px;
+            line-height: 1.35;
+            font-weight: 650;
+        }
+
+        .step .t {
+            font-size: 12px;
+            color: rgba(95, 109, 124, .98);
+            margin-top: 4px;
+            font-weight: 800;
+        }
+
+        /* Video + timeline inside lower card */
+        .rightGrid {
+            display: grid;
+            grid-template-columns: 1.1fr .9fr;
+            gap: 12px;
+            align-items: start;
+        }
+
+        @media (max-width: 740px) {
+            .rightGrid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .videoWrap {
+            border: 1px solid rgba(23, 34, 51, .10);
+            border-radius: 16px;
+            overflow: hidden;
+            background: #fff;
+            box-shadow: var(--shadow2);
+        }
+
+        .videoTop {
+            padding: 10px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            border-bottom: 1px solid rgba(23, 34, 51, .08);
+            background: linear-gradient(135deg, var(--g-50), var(--o-50));
+        }
+
+        .videoTopTitle {
+            font-size: 13px;
+            font-weight: 900;
+            margin: 0;
+        }
+
+        .toggleRow {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            color: rgba(23, 34, 51, .78);
+            font-size: 12px;
+            font-weight: 900;
+        }
+
+        .toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(23, 34, 51, .10);
+            background: rgba(255, 255, 255, .92);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 99px;
+            background: rgba(95, 109, 124, .35);
+            border: 1px solid rgba(23, 34, 51, .12);
+            transition: .15s;
+        }
+
+        .toggle.on .dot {
+            background: linear-gradient(135deg, var(--g-200), var(--o-200));
+        }
+
+        video {
+            width: 100%;
+            aspect-ratio: 9 / 16;
+            display: block;
+            background: #000;
+        }
+
+        .timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .shot {
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+            border-radius: 16px;
+            border: 1px solid rgba(23, 34, 51, .10);
+            background: rgba(255, 255, 255, .96);
+            transition: .15s transform, .15s box-shadow, .15s background;
+            cursor: pointer;
+            box-shadow: var(--shadow2);
+        }
+
+        .shot:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow);
+            background: rgba(255, 255, 255, .99);
+        }
+
+        .thumb {
+            width: 92px;
+            height: 64px;
+            border-radius: 14px;
+            border: 1px solid rgba(23, 34, 51, .10);
+            position: relative;
+            flex-shrink: 0;
+            background:
+                radial-gradient(18px 18px at 30% 30%, rgba(255, 255, 255, .95), transparent 60%),
+                linear-gradient(135deg, var(--g-200), var(--o-200));
+            overflow: hidden;
+        }
+
+        .timebadge {
+            position: absolute;
+            left: 8px;
+            bottom: 8px;
+            font-size: 11px;
+            padding: 3px 7px;
+            border-radius: 999px;
+            color: rgba(23, 34, 51, .86);
+            background: rgba(255, 255, 255, .90);
+            border: 1px solid rgba(23, 34, 51, .10);
+            font-weight: 900;
+        }
+
+        .shotMain {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding-top: 1px;
+        }
+
+        .shotTitle {
+            font-size: 12.8px;
+            font-weight: 900;
+            margin: 0;
+        }
+
+        .shotDesc {
+            margin: 0;
+            font-size: 12px;
+            color: rgba(95, 109, 124, .98);
+            line-height: 1.35;
+            font-weight: 650;
+        }
+
+        .note {
+            margin-top: 18px;
+            color: rgba(95, 109, 124, .95);
+            font-size: 12.5px;
+            display: flex;
+            justify-content: center;
+            text-align: center;
+            padding: 0 8px;
+            font-weight: 650;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            left: 50%;
+            bottom: 26px;
+            transform: translateX(-50%);
+            background: rgba(23, 34, 51, .90);
+            color: rgba(255, 255, 255, .95);
+            padding: 10px 12px;
+            border-radius: 14px;
+            box-shadow: 0 18px 40px rgba(17, 24, 39, .16);
+            font-size: 13px;
+            display: none;
+            max-width: min(560px, calc(100% - 24px));
+            text-align: center;
+            font-weight: 800;
+        }
+
+        .toast.show {
+            display: block;
+            animation: pop .22s ease-out;
+        }
+
+        @keyframes pop {
+            from {
+                transform: translateX(-50%) translateY(6px);
+                opacity: .2
+            }
+
+            to {
+                transform: translateX(-50%) translateY(0);
+                opacity: 1
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <header class="topbar">
+        <div class="brand">
+            <div class="logo" aria-hidden="true"></div>
+            <h1>
+                오늘 뭐먹지
+                <span class="badge">demo1</span>
+            </h1>
+        </div>
+
+        <div class="actions">
+            <button class="pill" id="btnSavedTop" type="button">
+                <span aria-hidden="true">⭐</span> 저장
+            </button>
+            <button class="pill" id="btnProfile" type="button">
+                <span class="avatar" aria-hidden="true">T</span>
+                프로필
+            </button>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="hero">
+            <h2 class="headline">
+                쇼츠 레시피, <span class="accent">한눈에 따라하기</span>
+            </h2>
+            <p class="sub">
+                유튜브 쇼츠 링크만 넣으면 재료·조리 순서·타임라인 컷을 정리해서 “따라 하기” 쉬운 형태로 보여줘요.
+            </p>
+
+            <div class="searchWrap">
+                <div class="searchBar">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M10.5 18.5a8 8 0 1 1 5.2-14.1A8 8 0 0 1 10.5 18.5Z" stroke="rgba(23,34,51,.70)"
+                            stroke-width="1.7" />
+                        <path d="M16.6 16.6 21 21" stroke="rgba(23,34,51,.55)" stroke-width="1.7"
+                            stroke-linecap="round" />
+                    </svg>
+                    <input id="urlInput" class="input"
+                        placeholder="유튜브 쇼츠 링크를 붙여넣어 주세요 (https://youtube.com/shorts/...)" autocomplete="off" />
+                    <button class="btn" id="analyzeBtn" type="button">
+                        <span aria-hidden="true">✨</span> 레시피 추출
+                    </button>
+                </div>
+
+                <div class="hintRow">
+                    <div class="chip" data-fill="https://youtube.com/shorts/abc123">예시 링크 1</div>
+                    <div class="chip" data-fill="https://youtube.com/shorts/def456">예시 링크 2</div>
+                    <div class="chip" id="chipPaste">클립보드 붙여넣기</div>
+                </div>
+            </div>
+
+            <div class="note">
+                (데모) 타임라인 컷을 누르면 영상이 그 구간으로 이동하고, “구간 반복”을 켜면 해당 구간만 반복 재생해요.
+            </div>
+        </section>
+
+        <section class="result" id="result">
+            <!-- Sticky Section Header: Recipe result -->
+            <div class="sectionHeader" id="recipeSticky">
+                <div class="sectionHeaderLeft">
+                    <div class="sectionKicker">레시피 결과</div>
+                    <div class="sectionTitleRow">
+                        <h3 class="sectionTitleText" id="recipeTitle">요리 이름</h3>
+                        <span class="metaPill" id="recipeMeta">총 00:00 · 1인분</span>
+                    </div>
+                </div>
+
+                <div class="sectionHeaderRight">
+                    <span class="metaPill" id="metaChannel">채널: (데모)</span>
+                    <span class="metaPill" id="metaDifficulty">난이도: 쉬움</span>
+                    <span class="metaPill" id="metaEstimated">예상: 10분</span>
+
+                    <button class="saveBtn" id="saveBtn" type="button" title="레시피 저장">
+                        <!-- bookmark icon -->
+                        <svg class="saveIcon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M6.5 4.5h11v16l-5.5-3-5.5 3v-16Z" stroke="rgba(23,34,51,.78)" stroke-width="1.7"
+                                stroke-linejoin="round" />
+                        </svg>
+                        <span id="saveBtnText">저장</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Recipe card -->
+            <div class="card">
+                <div class="cardHeader">
+                    <h3>📋 레시피 결과</h3>
+                    <span class="tag">요약</span>
+                </div>
+                <div class="cardBody">
+                    <div class="grid2">
+                        <div>
+                            <h5 class="sectionTitleSmall">🧺 재료</h5>
+                            <ul class="list" id="ingredients"></ul>
+                        </div>
+
+                        <div>
+                            <h5 class="sectionTitleSmall">🧑‍🍳 조리 순서</h5>
+                            <div class="steps" id="steps"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lower section: shorts + timeline -->
+            <div class="card" id="shortsSection">
+                <div class="cardHeader">
+                    <h3>🎬 본 숏츠 & 타임라인 컷</h3>
+                    <span class="tag" id="loopInfo">반복: OFF</span>
+                </div>
+                <div class="cardBody">
+                    <div class="rightGrid">
+                        <div class="videoWrap">
+                            <div class="videoTop">
+                                <p class="videoTopTitle">본 숏츠 (데모 플레이어)</p>
+                                <div class="toggleRow">
+                                    <div class="toggle" id="loopToggle" title="타임라인 구간 반복 재생">
+                                        <span class="dot" aria-hidden="true"></span>
+                                        구간 반복
+                                    </div>
+                                </div>
+                            </div>
+
+                            <video id="shortVideo" playsinline controls preload="metadata">
+                                <source src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+                                    type="video/mp4">
+                            </video>
+                        </div>
+
+                        <div class="timeline" id="timeline"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const $ = (sel) => document.querySelector(sel);
+
+        const urlInput = $("#urlInput");
+        const analyzeBtn = $("#analyzeBtn");
+        const result = $("#result");
+
+        const recipeTitle = $("#recipeTitle");
+        const recipeMeta = $("#recipeMeta");
+        const metaChannel = $("#metaChannel");
+        const metaDifficulty = $("#metaDifficulty");
+        const metaEstimated = $("#metaEstimated");
+
+        const ingredientsEl = $("#ingredients");
+        const stepsEl = $("#steps");
+        const timelineEl = $("#timeline");
+
+        const toast = $("#toast");
+
+        const shortVideo = $("#shortVideo");
+        const loopToggle = $("#loopToggle");
+        const loopInfo = $("#loopInfo");
+
+        const saveBtn = $("#saveBtn");
+        const saveBtnText = $("#saveBtnText");
+        const btnSavedTop = $("#btnSavedTop");
+
+        let loopEnabled = false;
+        let activeSegment = null;
+        let loopTimer = null;
+
+        // "saved" demo state
+        let isSaved = false;
+
+        const demoResponse = {
+            dishName: "10분 완성 계란볶음밥",
+            channelName: "오늘 뭐먹지 (데모)",
+            duration: "00:34",
+            servings: "1인분",
+            difficulty: "쉬움",
+            estimated: "10분",
+            ingredients: [
+                "밥 1공기",
+                "계란 2개",
+                "대파 1/3대",
+                "간장 1큰술",
+                "굴소스 1/2큰술(선택)",
+                "버터 1조각",
+                "후추 약간"
+            ],
+            steps: [
+                { t: "00:03", text: "대파를 잘게 썰고, 팬에 버터를 녹여 파기름을 만든다." },
+                { t: "00:10", text: "계란 2개를 넣고 스크램블을 만들듯 크게 저어준다." },
+                { t: "00:16", text: "밥을 넣고 뭉치지 않게 풀어가며 볶는다." },
+                { t: "00:23", text: "간장(필요 시 굴소스)로 간을 맞춘다." },
+                { t: "00:30", text: "후추 톡톡, 불 끄고 한 번 더 섞어서 완성." }
+            ],
+            timeline: [
+                { start: 3, end: 10, title: "파기름 시작", desc: "버터 + 대파로 향 올리기" },
+                { start: 10, end: 16, title: "계란 투입", desc: "몽글몽글 스크램블 만들기" },
+                { start: 16, end: 23, title: "밥 넣고 볶기", desc: "밥 뭉침 풀어주기" },
+                { start: 23, end: 30, title: "간 맞추기", desc: "간장(옵션: 굴소스)로 풍미" },
+                { start: 30, end: 34, title: "마무리", desc: "후추 + 섞기 → 완성" }
+            ]
+        };
+
+        function showToast(msg) {
+            toast.textContent = msg;
+            toast.classList.add("show");
+            setTimeout(() => toast.classList.remove("show"), 2200);
+        }
+
+        function secToMMSS(sec) {
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+        }
+
+        function clearLoop() {
+            if (loopTimer) { clearInterval(loopTimer); loopTimer = null; }
+        }
+
+        function startLoopWatcher() {
+            clearLoop();
+            loopTimer = setInterval(() => {
+                if (!loopEnabled || !activeSegment) return;
+                const t = shortVideo.currentTime || 0;
+                if (t > activeSegment.end - 0.05) {
+                    shortVideo.currentTime = activeSegment.start;
+                    shortVideo.play().catch(() => { });
+                }
+            }, 80);
+        }
+
+        function applyLoopState() {
+            loopInfo.textContent = `반복: ${loopEnabled ? "ON" : "OFF"}`;
+            loopToggle.classList.toggle("on", loopEnabled);
+            if (!loopEnabled) clearLoop();
+            if (loopEnabled && activeSegment) startLoopWatcher();
+        }
+
+        function playSegment(seg) {
+            activeSegment = seg;
+            shortVideo.currentTime = seg.start;
+            shortVideo.play().catch(() => { });
+
+            if (loopEnabled) {
+                startLoopWatcher();
+                showToast(`구간 반복 ON: ${secToMMSS(seg.start)}~${secToMMSS(seg.end)} · ${seg.title}`);
+            } else {
+                showToast(`이어서 재생: ${secToMMSS(seg.start)} · ${seg.title}`);
+            }
+        }
+
+        function applySavedUI() {
+            saveBtn.classList.toggle("saved", isSaved);
+            saveBtnText.textContent = isSaved ? "저장됨" : "저장";
+            btnSavedTop.innerHTML = isSaved ? "<span aria-hidden='true'>✅</span> 저장됨" : "<span aria-hidden='true'>⭐</span> 저장";
+        }
+
+        function toggleSave() {
+            isSaved = !isSaved;
+            applySavedUI();
+            showToast(isSaved ? "레시피를 저장했어!" : "저장을 해제했어.");
+        }
+
+        function renderDemo(data) {
+            recipeTitle.textContent = data.dishName;
+            recipeMeta.textContent = `총 ${data.duration} · ${data.servings}`;
+            metaChannel.textContent = `채널: ${data.channelName}`;
+            metaDifficulty.textContent = `난이도: ${data.difficulty}`;
+            metaEstimated.textContent = `예상: ${data.estimated}`;
+
+            ingredientsEl.innerHTML = "";
+            data.ingredients.forEach(i => {
+                const li = document.createElement("li");
+                li.textContent = i;
+                ingredientsEl.appendChild(li);
+            });
+
+            stepsEl.innerHTML = "";
+            data.steps.forEach((s, idx) => {
+                const div = document.createElement("div");
+                div.className = "step";
+                div.innerHTML = `
+          <div class="num">${idx + 1}</div>
+          <div>
+            <p>${s.text}</p>
+            <div class="t">${s.t}</div>
+          </div>
+        `;
+                stepsEl.appendChild(div);
+            });
+
+            timelineEl.innerHTML = "";
+            data.timeline.forEach((c) => {
+                const row = document.createElement("div");
+                row.className = "shot";
+                row.innerHTML = `
+          <div class="thumb">
+            <div class="timebadge">${secToMMSS(c.start)}</div>
+          </div>
+          <div class="shotMain">
+            <p class="shotTitle">${c.title}</p>
+            <p class="shotDesc">${c.desc}</p>
+          </div>
+        `;
+                row.addEventListener("click", () => playSegment(c));
+                timelineEl.appendChild(row);
+            });
+
+            result.classList.add("show");
+            result.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+
+        function isLikelyYoutube(url) {
+            return /youtube\.com\/shorts\/|youtu\.be\/|youtube\.com\/watch\?/.test(url);
+        }
+
+        function runAnalyze() {
+            const url = urlInput.value.trim();
+            if (!url) {
+                showToast("링크를 먼저 넣어줘!");
+                urlInput.focus();
+                return;
+            }
+
+            showToast(isLikelyYoutube(url)
+                ? "분석 중…(데모) STT → 요약 → 컷 추출"
+                : "유튜브 링크가 아닌 것 같아. 그래도 데모 결과를 보여줄게!");
+
+            analyzeBtn.disabled = true;
+            analyzeBtn.style.opacity = .75;
+            analyzeBtn.innerHTML = "⏳ 처리 중…";
+
+            setTimeout(() => {
+                analyzeBtn.disabled = false;
+                analyzeBtn.style.opacity = 1;
+                analyzeBtn.innerHTML = "<span aria-hidden='true'>✨</span> 레시피 추출";
+
+                // reset loop + saved
+                loopEnabled = false;
+                activeSegment = null;
+                applyLoopState();
+
+                isSaved = false;
+                applySavedUI();
+
+                renderDemo(demoResponse);
+            }, 650);
+        }
+
+        // events
+        analyzeBtn.addEventListener("click", runAnalyze);
+        urlInput.addEventListener("keydown", (e) => { if (e.key === "Enter") runAnalyze(); });
+
+        document.querySelectorAll(".chip[data-fill]").forEach(ch => {
+            ch.addEventListener("click", () => {
+                urlInput.value = ch.dataset.fill;
+                urlInput.focus();
+                showToast("예시 링크를 입력했어. 엔터 또는 버튼 클릭!");
+            });
+        });
+
+        $("#chipPaste").addEventListener("click", async () => {
+            try {
+                const text = await navigator.clipboard.readText();
+                if (text) {
+                    urlInput.value = text.trim();
+                    showToast("클립보드에서 붙여넣기 완료!");
+                    urlInput.focus();
+                } else {
+                    showToast("클립보드가 비어있어.");
+                }
+            } catch (err) {
+                showToast("브라우저 권한 때문에 실패. 직접 붙여넣어줘!");
+            }
+        });
+
+        loopToggle.addEventListener("click", () => {
+            loopEnabled = !loopEnabled;
+            applyLoopState();
+            showToast(loopEnabled ? "구간 반복 ON" : "구간 반복 OFF");
+        });
+
+        saveBtn.addEventListener("click", toggleSave);
+        btnSavedTop.addEventListener("click", toggleSave);
+
+        $("#btnProfile").addEventListener("click", () => showToast("(데모) 프로필 페이지로 이동"));
+
+        // init
+        applySavedUI();
+    </script>
+</body>
+
+</html>
